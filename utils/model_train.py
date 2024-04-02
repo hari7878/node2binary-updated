@@ -147,7 +147,7 @@ class Trainer:
         # add bias for zero, but keep negatives at exactly zero
         overall_gradient = torch.where(overall_gradient >= 0, overall_gradient + bias, 0)
 
-        use_tanh = True
+        use_tanh = False
         if use_tanh:
             random_tensor = torch.rand(self.model.embeddings.size(), device=self.model.embeddings.device)
             probs = (1 / 2) * torch.tanh(2 * overall_gradient / gradient_quarter)

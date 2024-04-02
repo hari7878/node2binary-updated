@@ -1,40 +1,14 @@
 import numpy as np
 from sklearn.model_selection import ShuffleSplit
-from sklearn.metrics import f1_score, accuracy_score
+from sklearn.metrics import accuracy_score, average_precision_score, f1_score, roc_auc_score
 from sklearn.preprocessing import MultiLabelBinarizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.multiclass import OneVsRestClassifier
-
-def load_embeddings(file_path):
-    embeddings = {}
-    with open(file_path, 'r') as file:
-        next(file)  # Skip the first line
-        for line in file:
-            parts = line.strip().split()
-            node_id = parts[0]  # Node ID as string
-            vector = [float(x) for x in parts[1:]]  # Convert the rest to float
-            embeddings[node_id] = vector
-    return embeddings
-
-def load_labels(file_path):
-    labels = {}
-    with open(file_path, 'r') as file:
-        for line in file:
-            parts = line.strip().split()
-            node_id = parts[0]
-            node_labels = [int(label) for label in parts[1:]]
-            labels[node_id] = node_labels
-    return labels
-
-def get_y_pred(y_test, y_pred_prob):
-    y_pred = np.zeros(y_pred_prob.shape)
-    sort_index = np.flip(np.argsort(y_pred_prob, axis=1), 1)
-    for i in range(y_test.shape[0]):
-        num = np.sum(y_test[i])
-        for j in range(num):
-            y_pred[i][sort_index[i][j]] = 1
-    return y_pred
-
+import random
+from utils.graph_processing import load_embeddings
+from utils.graph_processing import load_labels
+from utils.graph_processing import get_y_pred
+from utils.graph_processing import generate_neg_edges
 
 def NodeClassification(embedding_look_up, node_list, labels, testing_ratio, seed):
     n_splits = 10
@@ -76,3 +50,83 @@ def NodeClassification(embedding_look_up, node_list, labels, testing_ratio, seed
     avg_macro_f1 = np.mean(macro_f1_scores)
 
     return avg_accuracy, avg_micro_f1, avg_macro_f1
+
+
+def LinkPrediction(embedding_look_up, original_graph, train_graph, test_pos_edges, seed,binary_operator):
+    random.seed(seed)
+    import copy
+    train_neg_edges = generate_neg_edges(original_graph, len(train_graph.edges()), seed)
+
+    # create a auxiliary graph to ensure that testing negative edges will not used in training
+    G_aux = copy.deepcopy(original_graph)
+    G_aux.add_edges_from(train_neg_edges)
+    test_neg_edges = generate_neg_edges(G_aux, len(test_pos_edges), seed)
+
+    # construct X_train, y_train, X_test, y_test
+    X_train = []
+    y_train = []
+    for edge in train_graph.edges():
+        node_u_emb = embedding_look_up[edge[0]]
+        node_v_emb = embedding_look_up[edge[1]]
+        feature_vector = binary_operation(node_u_emb, node_v_emb, binary_operator)
+        X_train.append(feature_vector)
+        y_train.append(1)
+    for edge in train_neg_edges:
+        node_u_emb = embedding_look_up[edge[0]]
+        node_v_emb = embedding_look_up[edge[1]]
+        feature_vector = binary_operation(node_u_emb, node_v_emb, binary_operator)
+        X_train.append(feature_vector)
+        y_train.append(0)
+
+    X_test = []
+    y_test = []
+    for edge in test_pos_edges:
+        node_u_emb = embedding_look_up[edge[0]]
+        node_v_emb = embedding_look_up[edge[1]]
+        feature_vector = binary_operation(node_u_emb, node_v_emb, binary_operator)
+        X_test.append(feature_vector)
+        y_test.append(1)
+    for edge in test_neg_edges:
+        node_u_emb = embedding_look_up[edge[0]]
+        node_v_emb = embedding_look_up[edge[1]]
+        feature_vector = binary_operation(node_u_emb, node_v_emb, binary_operator)
+        X_test.append(feature_vector)
+        y_test.append(0)
+
+    # shuffle for training and testing
+    c = list(zip(X_train, y_train))
+    random.shuffle(c)
+    X_train, y_train = zip(*c)
+
+    c = list(zip(X_test, y_test))
+    random.shuffle(c)
+    X_test, y_test = zip(*c)
+
+    X_train = np.array(X_train)
+    y_train = np.array(y_train)
+
+    X_test = np.array(X_test)
+    y_test = np.array(y_test)
+
+    clf1 = LogisticRegression(random_state=seed, solver='lbfgs')
+    clf1.fit(X_train, y_train)
+    y_pred_proba = clf1.predict_proba(X_test)[:, 1]
+    y_pred = clf1.predict(X_test)
+    auc_roc = roc_auc_score(y_test, y_pred_proba)
+    auc_pr = average_precision_score(y_test, y_pred_proba)
+    accuracy = accuracy_score(y_test, y_pred)
+    f1 = f1_score(y_test, y_pred)
+    return auc_roc, auc_pr, accuracy, f1
+
+def binary_operation(u_emb, v_emb, operator):
+    if operator == 'Average':
+        return (u_emb + v_emb) / 2
+    elif operator == 'Hadamard':
+        return np.multiply(u_emb, v_emb)
+    elif operator == 'Weighted-L1':
+        return np.abs(u_emb - v_emb)
+    elif operator == 'Weighted-L2':
+        return (u_emb - v_emb) ** 2
+    else:  # Default action if none of the conditions are met
+        # Assuming default action is concatenation
+        return np.append(u_emb, v_emb)

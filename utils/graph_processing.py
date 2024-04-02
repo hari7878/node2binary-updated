@@ -1,6 +1,9 @@
 import networkx as nx
 import numpy as np
 from torchtext.data import to_map_style_dataset
+import random
+import itertools
+import copy
 def process_edgelist(input_filename, output_filename):
     # Initialize dictionaries for mapping and reverse mapping
     mapping_dict = {}
@@ -35,7 +38,7 @@ def process_edgelist(input_filename, output_filename):
                 node2_mapped = mapping_dict[node2]
 
             # Write the modified line to the new file
-            outfile.write(f"{node1_mapped} {node2_mapped} {weight}\n")
+            outfile.write(f"{node1_mapped} {node2_mapped} {float(weight)}\n")
 
     return mapping_dict, reverse_mapping_dict
 
@@ -70,28 +73,121 @@ def get_data(walks):
 import torch
 
 def save_embeddings(vocab, final_embeddings, filename, reverse_mapping_dict=None, input_node_ids_numbered=True):
-    # Ensure reverse_mapping_dict is a dictionary
-    if not isinstance(reverse_mapping_dict, dict):
-        raise ValueError("reverse_mapping_dict must be a dictionary")
+    if not isinstance(reverse_mapping_dict, dict) and not input_node_ids_numbered:
+        raise ValueError("reverse_mapping_dict must be provided and be a dictionary when input_node_ids_numbered is False")
+
+    # Initialize the embedding lookup dictionary
+    embedding_lookup = {}
 
     with open(filename, 'w') as fout:
-        word_vectors = {}
-        for i in range(len(final_embeddings)):
-            # Convert PyTorch tensor to numpy array if necessary, then to list
-            if isinstance(final_embeddings[i], torch.Tensor):
-                # Convert tensor to list of 0s and 1s (assuming it's already in that format)
-                vec = final_embeddings[i].tolist()
-            else:
-                # Handle non-tensor embeddings (if any) that are already lists
-                vec = final_embeddings[i]
-            word_vectors[vocab[i]] = vec
-        node_num = len(word_vectors.keys())
-        size = len(next(iter(word_vectors.values())))  # Getting the size from the first value
+        # Calculate the number of nodes and the embedding size
+        node_num = len(final_embeddings)
+        size = len(final_embeddings[0]) if node_num > 0 else 0
         fout.write(f"{node_num} {size}\n")
-        for node, vec in word_vectors.items():
+
+        for i in range(node_num):
+            node_id = i + 1  # Node IDs start from 1
             if not input_node_ids_numbered:
-                # Attempt to map back to original node ID using reverse_mapping_dict
-                node_id = reverse_mapping_dict.get(node, node)  # Fallback to node if not found
+                # Use reverse mapping to find the original node ID
+                original_node_id = reverse_mapping_dict.get(node_id, node_id)
+                node_id_str = str(original_node_id)  # Ensure node_id is a string for the dictionary
             else:
-                node_id = node
-            fout.write(f"{node_id} {' '.join(map(str, vec))}\n")
+                node_id_str = str(node_id)
+
+            # Convert PyTorch tensor to list if necessary
+            vec = final_embeddings[i].tolist() if isinstance(final_embeddings[i], torch.Tensor) else final_embeddings[i]
+
+            # Write the embedding to the file
+            fout.write(f"{node_id_str} {' '.join(map(str, vec))}\n")
+
+            # Update the embedding lookup dictionary
+            embedding_lookup[str(node_id)] = vec
+
+    return embedding_lookup
+
+def load_embeddings(file_path):
+    embeddings = {}
+    with open(file_path, 'r') as file:
+        next(file)  # Skip the first line
+        for line in file:
+            parts = line.strip().split()
+            node_id = parts[0]  # Node ID as string
+            vector = [float(x) for x in parts[1:]]  # Convert the rest to float
+            embeddings[node_id] = vector
+    return embeddings
+
+def load_labels(file_path):
+    labels = {}
+    with open(file_path, 'r') as file:
+        for line in file:
+            parts = line.strip().split()
+            node_id = parts[0]
+            node_labels = [int(label) for label in parts[1:]]
+            labels[node_id] = node_labels
+    return labels
+
+def get_y_pred(y_test, y_pred_prob):
+    y_pred = np.zeros(y_pred_prob.shape)
+    sort_index = np.flip(np.argsort(y_pred_prob, axis=1), 1)
+    for i in range(y_test.shape[0]):
+        num = np.sum(y_test[i])
+        for j in range(num):
+            y_pred[i][sort_index[i][j]] = 1
+    return y_pred
+
+def generate_neg_edges(original_graph, testing_edges_num, seed):
+    L = list(original_graph.nodes())
+
+    # create a complete graph
+    G = nx.Graph()
+    G.add_nodes_from(L)
+    G.add_edges_from(itertools.combinations(L, 2))
+    # remove original edges
+    G.remove_edges_from(original_graph.edges())
+    random.seed(seed)
+    neg_edges = random.sample(G.edges, testing_edges_num)
+    return neg_edges
+
+def load_embedding(embedding_file_name, node_list=None):
+    with open(embedding_file_name) as f:
+        node_num, emb_size = f.readline().split()
+        print('Nodes with embedding: %s'%node_num)
+        embedding_look_up = {}
+        if node_list:
+            for line in f:
+                vec = line.strip().split()
+                node_id = vec[0]
+                if (node_id in node_list):
+                    emb = [float(x) for x in vec[1:]]
+                    emb = emb / np.linalg.norm(emb)
+                    emb[np.isnan(emb)] = 0
+                    embedding_look_up[node_id] = np.array(emb)
+
+def split_train_test_graph(input_edgelist, seed, testing_ratio, weighted):
+    if (weighted):
+        G = nx.read_weighted_edgelist(input_edgelist)
+    else:
+        G = nx.read_edgelist(input_edgelist)
+    node_num1, edge_num1 = len(G.nodes), len(G.edges)
+    print('Original Graph: nodes:', node_num1, 'edges:', edge_num1)
+    testing_edges_num = int(len(G.edges) * testing_ratio)
+    random.seed(seed)
+    testing_pos_edges = random.sample(G.edges, testing_edges_num)
+    G_train = copy.deepcopy(G)
+    for edge in testing_pos_edges:
+        node_u, node_v = edge
+        if (G_train.degree(node_u) > 1 and G_train.degree(node_v) > 1):
+            G_train.remove_edge(node_u, node_v)
+
+    G_train.remove_nodes_from(nx.isolates(G_train))
+    node_num2, edge_num2 = len(G_train.nodes), len(G_train.edges)
+    assert node_num1 == node_num2
+    train_graph_filename = 'graph_train.edgelist'
+    if weighted:
+        nx.write_edgelist(G_train, train_graph_filename, data=['weight'])
+    else:
+        nx.write_edgelist(G_train, train_graph_filename, data=False)
+
+    node_num1, edge_num1 = len(G_train.nodes), len(G_train.edges)
+    print('Training Graph: nodes:', node_num1, 'edges:', edge_num1)
+    return G, G_train, testing_pos_edges, train_graph_filename

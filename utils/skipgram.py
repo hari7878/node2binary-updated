@@ -25,7 +25,7 @@ class SkipGrams:  # it works like a custom dataloader
         return discard_dict
 
     def collate_skipgram(self, batch):
-
+        #Subsampling
         batch_input, batch_output = [], []
         for text in batch:
             #check this text tokens its based on rank indexing do we need it?

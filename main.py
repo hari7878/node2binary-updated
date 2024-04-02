@@ -14,9 +14,9 @@ from utils.graph_processing import get_data
 from utils.skipgram import SkipGrams
 from utils.model_initialization_and_vocab import node2binary
 from utils.model_train import Trainer
-from utils.graph_processing import save_embeddings
-from utils.evaluation import load_embeddings,load_labels,NodeClassification
-
+from utils.graph_processing import save_embeddings,load_embeddings,load_labels,load_embedding,split_train_test_graph
+from utils.evaluation import NodeClassification,LinkPrediction
+import random
 
 # Main function!
 @click.command(no_args_is_help=True)
@@ -51,10 +51,16 @@ from utils.evaluation import load_embeddings,load_labels,NodeClassification
 @click.option("--verbose", type=int, default=1)
 @click.option("--task", type=str, default=None)
 @click.option("--testing_ratio", type=float, default=None)
+@click.option('--binary_operator', type=click.Choice(['Average', 'Hadamard', 'Weighted-L1', 'Weighted-L2'], case_sensitive=False), default=None)
+@click.option("--seed", type=int, default=42)
 
 
 
-def main(input_file,is_directed,is_weighted,input_labels_path,embed_dim,embed_max_norm,input_node_ids_numbered,print_this_time,nodes_indexing_starting_from_1,pos_weight,neg_weight,gradient_quarter,gradient_bias,verbose,neg_samples,min_freq,ns_array_len,tokenizer,batch_size,n_epochs,walk_length,number_walks,window_size,p,q,task,testing_ratio):
+
+
+def main(input_file,is_directed,is_weighted,input_labels_path,embed_dim,embed_max_norm,input_node_ids_numbered,print_this_time,nodes_indexing_starting_from_1,pos_weight,neg_weight,gradient_quarter,gradient_bias,verbose,neg_samples,min_freq,ns_array_len,tokenizer,batch_size,n_epochs,walk_length,number_walks,window_size,p,q,task,testing_ratio,binary_operator,seed):
+    random.seed(seed)
+    np.random.seed(seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     input_file_abs_path = os.path.abspath(input_file)
     base_name, ext = os.path.splitext(os.path.basename(input_file_abs_path))
@@ -71,19 +77,21 @@ def main(input_file,is_directed,is_weighted,input_labels_path,embed_dim,embed_ma
     else:
         # If node IDs are numbered, use the original file as is
         input_file_to_use = input_file_abs_path
+    if task=='link-prediction':
+        G, G_train, testing_pos_edges, train_graph_filename = split_train_test_graph(os.path.abspath(input_file_to_use), seed,testing_ratio, is_weighted)
+        input_file_to_use = train_graph_filename
 
     # Now, read the graph using the appropriate file
     nx_G = read_graph(input_file_to_use, is_directed, is_weighted)
 
     #Start Walks
     walker = Walker(nx_G, is_directed, p=p, q=q)
-    walker.preprocess_transition_probs()
     print("Preprocess transition probs...")
     walker.preprocess_transition_probs()
     walks = walker.simulate_walks(num_walks=number_walks, walk_length=walk_length)
     print("\nWalks output:", np.array(walks).shape)
 
-    #post-processing walks to start node indexing from 1
+    #post-processing walks to start node indexing from 0
     if nodes_indexing_starting_from_1 or not input_node_ids_numbered:
         walks = [[element - 1 for element in row] for row in walks]
 
@@ -111,6 +119,7 @@ def main(input_file,is_directed,is_weighted,input_labels_path,embed_dim,embed_ma
     #Tokenize data
     tokenizer = get_tokenizer(params.TOKENIZER)
     #Map vocabulary to index and frequencies
+    #vocab_words are list of nodes ordered by freq
     my_vocab, vocab_words = build_vocab(train_iter, tokenizer, params)
     #Compress contexts and subsampling
     skip_gram = SkipGrams(vocab=my_vocab, params=params, tokenizer=tokenizer)
@@ -139,7 +148,7 @@ def main(input_file,is_directed,is_weighted,input_labels_path,embed_dim,embed_ma
     final_embeddings = model.embeddings
     #Output_filename
     output_filename = f"embeddings/{base_name}_adjusted.txt"
-    save_embeddings(vocab_words, final_embeddings, output_filename,reverse_mapping_dict,input_node_ids_numbered)
+    embedding_look_up=save_embeddings(vocab_words, final_embeddings, output_filename,reverse_mapping_dict,input_node_ids_numbered)
     #plot loss_train_validation
     plt.plot(trainer.loss['train'], label="Train")
     plt.plot(trainer.loss['valid'], label="Validation")
@@ -159,6 +168,12 @@ def main(input_file,is_directed,is_weighted,input_labels_path,embed_dim,embed_ma
         acc, micro, macro = NodeClassification(embedding_look_up, node_list, labels, testing_ratio, 0)
         print("############# NODE-CLASSIFICATION ###################")
         print(f"Accuracy: {acc}, Micro F1: {micro}, Macro F1: {macro}")
+
+    if task == 'link-prediction':
+        auc_roc, auc_pr, accuracy, f1 = LinkPrediction(embedding_look_up, G, G_train, testing_pos_edges, seed, binary_operator)
+        print('#' * 9 + ' Link Prediction Performance ' + '#' * 9)
+        print(f'AUC-ROC: {auc_roc:.3f}, AUC-PR: {auc_pr:.3f}, Accuracy: {accuracy:.3f}, F1: {f1:.3f}')
+        print('#' * 50)
 
 
 
