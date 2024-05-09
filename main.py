@@ -26,7 +26,7 @@ import random
 @click.option("--input_labels_path",default=None)
 @click.option("--embed_dim", required=True, type=int)
 @click.option("--embed_max_norm", default=None)
-@click.option("--input_node_ids_numbered", type=bool, required=True)
+@click.option("--input_node_ids_numbered", type=bool, default=True)
 @click.option("--print_this_time", type=bool, default=True)
 @click.option("--nodes_indexing_starting_from_1", type=bool, default=True)
 ## training parameters
