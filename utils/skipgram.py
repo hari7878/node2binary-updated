@@ -1,9 +1,9 @@
 import torch
-from utils.model_initialization_and_vocab import Vocab
+from .model_initialization_and_vocab import Vocab
 import random
 import numpy as np
 from collections import Counter
-from utils.model_initialization_and_vocab import node2binaryParams
+from .model_initialization_and_vocab import node2binaryParams
 class SkipGrams:  # it works like a custom dataloader
     def __init__(self, vocab: Vocab, params: node2binaryParams, tokenizer):
         self.vocab = vocab
