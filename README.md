@@ -1,4 +1,5 @@
-
+# node2binary
+Representing each node in a graph as d-dimensional binary vectors.<br />
 ## Parameters Example use case for yeast ppi dataset
 python main.py C:\Users\haris\Downloads\node2binary-updated-main\node2binary-updated-main\data\HT.Combined.PMID-14690591.144gene.688link_adjusted.edgelist --is_weighted True  --embed_dim 128 --input_node_ids_numbered False --nodes_indexing_starting_from_1 False --pos_weight 25 --neg_weight 5 --gradient_quarter 150000 --gradient_bias 2 --neg_samples 5 --n_epochs 25 --p 4 --q 1  
 
