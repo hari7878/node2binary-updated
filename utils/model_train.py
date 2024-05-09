@@ -1,15 +1,15 @@
-from utils.model_initialization_and_vocab import node2binary,node2binaryParams
-from utils.model_initialization_and_vocab import Vocab
-from utils.skipgram import SkipGrams
+from .model_initialization_and_vocab import node2binary,node2binaryParams
+from .model_initialization_and_vocab import Vocab
+from .skipgram import SkipGrams
 from torch.utils.data import DataLoader
 from time import monotonic
 import torch
-from utils.gradient import gradient
+from .gradient import gradient
 import time
 import numpy as np
 import matplotlib.pyplot as plt
 import os
-from utils.negative_sampling import NegativeSampler
+from .negative_sampling import NegativeSampler
 class Trainer:
     def __init__(self, model: node2binary, params: node2binaryParams,
                  vocab: Vocab, train_iter, valid_iter, skipgrams: SkipGrams):
