@@ -5,10 +5,10 @@ from sklearn.preprocessing import MultiLabelBinarizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.multiclass import OneVsRestClassifier
 import random
-from utils.graph_processing import load_embeddings
-from utils.graph_processing import load_labels
-from utils.graph_processing import get_y_pred
-from utils.graph_processing import generate_neg_edges
+from .graph_processing import load_embeddings
+from .graph_processing import load_labels
+from .graph_processing import get_y_pred
+from .graph_processing import generate_neg_edges
 
 def NodeClassification(embedding_look_up, node_list, labels, testing_ratio, seed):
     n_splits = 10
@@ -68,13 +68,13 @@ def LinkPrediction(embedding_look_up, original_graph, train_graph, test_pos_edge
     for edge in train_graph.edges():
         node_u_emb = embedding_look_up[edge[0]]
         node_v_emb = embedding_look_up[edge[1]]
-        feature_vector = binary_operation(node_u_emb, node_v_emb, binary_operator)
+        feature_vector = binary_operation(np.array(node_u_emb), np.array(node_v_emb), binary_operator)
         X_train.append(feature_vector)
         y_train.append(1)
     for edge in train_neg_edges:
         node_u_emb = embedding_look_up[edge[0]]
         node_v_emb = embedding_look_up[edge[1]]
-        feature_vector = binary_operation(node_u_emb, node_v_emb, binary_operator)
+        feature_vector = binary_operation(np.array(node_u_emb), np.array(node_v_emb), binary_operator)
         X_train.append(feature_vector)
         y_train.append(0)
 
@@ -83,13 +83,13 @@ def LinkPrediction(embedding_look_up, original_graph, train_graph, test_pos_edge
     for edge in test_pos_edges:
         node_u_emb = embedding_look_up[edge[0]]
         node_v_emb = embedding_look_up[edge[1]]
-        feature_vector = binary_operation(node_u_emb, node_v_emb, binary_operator)
+        feature_vector = binary_operation(np.array(node_u_emb), np.array(node_v_emb), binary_operator)
         X_test.append(feature_vector)
         y_test.append(1)
     for edge in test_neg_edges:
         node_u_emb = embedding_look_up[edge[0]]
         node_v_emb = embedding_look_up[edge[1]]
-        feature_vector = binary_operation(node_u_emb, node_v_emb, binary_operator)
+        feature_vector = binary_operation(np.array(node_u_emb), np.array(node_v_emb), binary_operator)
         X_test.append(feature_vector)
         y_test.append(0)
 
