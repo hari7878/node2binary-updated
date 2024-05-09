@@ -178,6 +178,8 @@ def split_train_test_graph(input_edgelist, seed, testing_ratio, weighted):
         node_u, node_v = edge
         if (G_train.degree(node_u) > 1 and G_train.degree(node_v) > 1):
             G_train.remove_edge(node_u, node_v)
+            if G_train.degree(node_u) == 0 or G_train.degree(node_v) == 0:
+                G_train.add_edge(node_u, node_v, weight=1)
 
     G_train.remove_nodes_from(nx.isolates(G_train))
     node_num2, edge_num2 = len(G_train.nodes), len(G_train.edges)
