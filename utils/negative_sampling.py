@@ -1,4 +1,4 @@
-from utils.model_initialization_and_vocab import Vocab
+from .model_initialization_and_vocab import Vocab
 import random
 import torch
 import numpy as np
